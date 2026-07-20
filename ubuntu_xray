@@ -2,7 +2,7 @@
 # ==========================================================
 # Optimized Firenet/Vollam Xray Auto Installer (IP DIRECT)
 # No Crash / Dummy SSL / Anti-Disconnect / Fast Install
-# FINAL FIX: Removed destructive config cron job
+# FINAL FIX: SSH Lockout Removed & Password Auth Enabled
 # ==========================================================
 
 UUID=$(cat /proc/sys/kernel/random/uuid)
@@ -32,9 +32,8 @@ first_setup(){
     timedatectl set-timezone Asia/Dhaka || timedatectl set-timezone UTC
     wget -O /etc/banner "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/banner" >/dev/null 2>&1
     chmod +x /etc/banner
-    wget -O /etc/ssh/sshd_config "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/sshd_config" >/dev/null 2>&1
+    # ❌ REMOVED: sshd_config override that was blocking Termius login
     wget -q -O /etc/ipserver "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/ipserver" && bash /etc/ipserver >/dev/null 2>&1
-    chmod 644 /etc/ssh/sshd_config
     
     useradd -M firenet || true
     usermod -aG sudo,firenet firenet || true 
@@ -175,7 +174,9 @@ install_sudo(){
         echo "adminmtk:Mediatek272124@@" | chpasswd
         usermod -aG sudo adminmtk
     fi
-    sed -i 's/^PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+    # ✅ FIX: Forcing SSH to always allow Root & Password login
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
     systemctl restart ssh || systemctl restart sshd
 }
 
