@@ -2,27 +2,28 @@
 # ==========================================================
 # Optimized Firenet/Vollam Xray Auto Installer (IP DIRECT)
 # No Crash / Dummy SSL / Anti-Disconnect / Fast Install
+# FINAL FIX: Removed destructive config cron job
 # ==========================================================
 
 UUID=$(cat /proc/sys/kernel/random/uuid)
 timedatectl set-timezone Asia/Dhaka || timedatectl set-timezone UTC
 
 base_package() {
-    sudo apt --purge remove git man-db apache2 ufw exim4 firewalld snapd* apparmor bind9 -y
+    sudo apt --purge remove git man-db apache2 ufw exim4 firewalld snapd* apparmor bind9 -y >/dev/null 2>&1
     sysctl -w net.ipv6.conf.all.disable_ipv6=1
     sysctl -w net.ipv6.conf.default.disable_ipv6=1
     
     export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -y
-    apt install nginx zip netcat-traditional bash-completion vnstat -y
-    apt install curl socat xz-utils wget apt-transport-https dnsutils screen chrony -y
-    apt install tar ruby unzip p7zip-full python3-pip libc6 gnupg gnupg2 gnupg1 -y
-    apt install -y iptables sudo neofetch default-mysql-client -y
-    apt install iftop bzip2 gzip lsof bc htop sed openssl wireguard-tools stunnel4 -y
-    apt install tmux python3 nodejs libsqlite3-dev cron wondershaper -y
-    apt install net-tools jq openvpn easy-rsa python3-certbot-nginx tuned fail2ban -y
-    apt-get clean all; sudo apt-get autoremove -y
+    apt-get update -y >/dev/null 2>&1
+    apt install nginx zip netcat-traditional bash-completion vnstat -y >/dev/null 2>&1
+    apt install curl socat xz-utils wget apt-transport-https dnsutils screen chrony -y >/dev/null 2>&1
+    apt install tar ruby unzip p7zip-full python3-pip libc6 gnupg gnupg2 gnupg1 -y >/dev/null 2>&1
+    apt install -y iptables sudo neofetch default-mysql-client -y >/dev/null 2>&1
+    apt install iftop bzip2 gzip lsof bc htop sed openssl wireguard-tools stunnel4 -y >/dev/null 2>&1
+    apt install tmux python3 nodejs libsqlite3-dev cron wondershaper -y >/dev/null 2>&1
+    apt install net-tools jq openvpn easy-rsa python3-certbot-nginx tuned fail2ban -y >/dev/null 2>&1
+    apt-get clean all; sudo apt-get autoremove -y >/dev/null 2>&1
     clear
 }
 
@@ -43,7 +44,7 @@ first_setup(){
 }
 
 install_squid(){
-    apt install squid -y
+    apt install squid -y >/dev/null 2>&1
     echo "acl Firenet dst `curl -s https://api.ipify.org`" >> /etc/squid/squid.conf
     echo 'http_port 8080
 http_port 8181
@@ -72,7 +73,7 @@ error_directory /usr/share/squid/errors/English' >> /etc/squid/squid.conf
 }
 
 install_vnstat(){
-    apt-get install vnstat -y
+    apt-get install vnstat -y >/dev/null 2>&1
     systemctl enable vnstat
     systemctl restart vnstat
 }
@@ -82,9 +83,9 @@ install_xray(){
     chown firenet.firenet $domainSock_dir
     chown firenet.firenet /var/log/xray
     
-    echo "127.0.0.1" >> /etc/xray/domain
-    curl -s ipinfo.io/city >> /etc/xray/city
-    curl -s ipinfo.io/org | cut -d " " -f 2-10 >> /etc/xray/isp
+    echo "127.0.0.1" > /etc/xray/domain
+    curl -s ipinfo.io/city > /etc/xray/city
+    curl -s ipinfo.io/org | cut -d " " -f 2-10 > /etc/xray/isp
     
     mtk_xray_latest="$(curl -s https://api.github.com/repos/gitlabdexter/Xray-core/releases | grep tag_name | sed -E 's/.*"v(.*)".*/\1/' | head -n 1)"
     if [ -z "$mtk_xray_latest" ]; then mtk_xray_latest="1.8.4"; fi
@@ -139,7 +140,6 @@ install_ssl() {
     systemctl stop "$STOPWEBSERVER" || true
     systemctl stop nginx || true
     
-    # 100% Crash-Proof Dummy SSL for Nginx
     mkdir -p /etc/xray
     openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "/C=US/ST=State/L=City/O=Organization/CN=PremiumVPN" >/dev/null 2>&1
     chmod 777 /etc/xray/xray.key /etc/xray/xray.crt
@@ -198,13 +198,17 @@ uuid: ${UUID}
 network: ws
 tls: true
 END
-
-sudo crontab -l | { echo "* * * * * /bin/bash /etc/.xray >/dev/null 2>&1
-* * * * * /bin/bash /etc/.monitor xray >/dev/null 2>&1
-* * * * * /bin/bash /etc/xray/xray_stats.sh >/dev/null 2>&1"; } | crontab -
-sudo systemctl restart cron
     
+    crontab -r || true
+    (echo "* * * * * /bin/bash /etc/.xray >/dev/null 2>&1
+* * * * * /bin/bash /etc/.monitor xray >/dev/null 2>&1
+* * * * * /bin/bash /etc/xray/xray_stats.sh >/dev/null 2>&1") | crontab -
+    
+    sudo systemctl restart cron
     rm -f /usr/local/etc/.system
+    
+    systemctl restart xray.service
+    
     echo 'Server installation completed successfully! Rebooting...'
     sleep 5
     reboot
@@ -243,6 +247,10 @@ sudo systemctl start firenet.service || true
 echo "xray_tls=443
 xray_ntls=80
 squid_port=8080" > /root/.ports
+
+# 👉 REMOVED THE FATAL AUTHENTICATION SCRIPT HERE 👈
+rm -f /home/authentication.sh
+rm -f /etc/cron.d/account
 
 echo "DB_HOST='localhost'" > /etc/xray/.db-base
 echo "DB_NAME='panel'" >> /etc/xray/.db-base
