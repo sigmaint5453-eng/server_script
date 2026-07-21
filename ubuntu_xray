@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==========================================================
-# CLEANED & OPTIMIZED Firenet Xray Auto Installer
-# FIX: Removed Anti-Disconnect Monitor & Deadly Cron Jobs
+# FINAL ALL-IN-ONE Firenet Xray Auto Installer
+# 100% Automated for Panel (No Termius Needed)
 # ==========================================================
 
 UUID=$(cat /proc/sys/kernel/random/uuid)
@@ -29,14 +29,8 @@ base_package() {
 first_setup(){
     echo 'set +o history' >> /etc/profile
     timedatectl set-timezone Asia/Dhaka || timedatectl set-timezone UTC
-    wget -O /etc/banner "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/banner" >/dev/null 2>&1
-    chmod +x /etc/banner
-    
-    wget -q -O /etc/ipserver "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/ipserver" && bash /etc/ipserver >/dev/null 2>&1
-    
     useradd -M firenet || true
     usermod -aG sudo,firenet firenet || true 
-
     echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
     echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
 }
@@ -57,14 +51,8 @@ http_reply_access allow all
 http_access deny all
 icp_access allow all
 always_direct allow all
-visible_hostname Firenet-Proxy
-error_directory /usr/share/squid/errors/English' >> /etc/squid/squid.conf
-    rm -f /usr/share/squid/errors/English/ERR_INVALID_URL
-    echo '<!--FirenetDev--><!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>SECURE PROXY</title><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="https://bootswatch.com/4/slate/bootstrap.min.css" media="screen"><style>body{font-family: monospace; color:white; background:#111; text-align:center; padding-top:50px;}</style></head><body><h1>SECURE PROXY</h1><h4>SERVER</h4><p>😍 %w 😍</p></body></html>' >> /usr/share/squid/errors/English/ERR_INVALID_URL
-    chmod 755 /usr/share/squid/errors/English/*
+visible_hostname Firenet-Proxy' >> /etc/squid/squid.conf
     systemctl restart squid || true
-    
-    # [REMOVED DEADLY MONITOR SCRIPTS HERE]
 }
 
 install_vnstat(){
@@ -82,29 +70,47 @@ install_xray(){
     curl -s ipinfo.io/city > /etc/xray/city
     curl -s ipinfo.io/org | cut -d " " -f 2-10 > /etc/xray/isp
     
-    mtk_xray_latest="$(curl -s https://api.github.com/repos/gitlabdexter/Xray-core/releases | grep tag_name | sed -E 's/.*"v(.*)".*/\1/' | head -n 1)"
-    if [ -z "$mtk_xray_latest" ]; then mtk_xray_latest="1.8.4"; fi
-    mtk_xraycore_link="https://github.com/githubdexter/Xray-core/releases/download/v$mtk_xray_latest/xray.linux.64bit"
     curl -sL "https://github.com/XTLS/Xray-core/releases/download/v1.8.4/Xray-linux-64.zip" -o xray.zip
     unzip -q xray.zip xray -d /usr/sbin/
     rm xray.zip
     
-    wget -O /etc/xray/xray_stats.sh "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/xray_stats.sh" >/dev/null 2>&1
-    chmod +x /etc/xray/xray_stats.sh || true
-    wget -O /etc/xray/config.json "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/xray_config.json" >/dev/null 2>&1
-    
-    # Fallback minimal config in case link is dead
-    if [ ! -s /etc/xray/config.json ]; then
-        echo '{"log":{"access":"/var/log/xray/access.log","error":"/var/log/xray/error.log","loglevel":"warning"},"inbounds":[{"port":80,"protocol":"vless","settings":{"clients":[{"id":"'${UUID}'"}],"decryption":"none"},"streamSettings":{"network":"ws","wsSettings":{"path":"/ws-kobe"}}}],"outbounds":[{"protocol":"freedom"}]}' > /etc/xray/config.json
-    fi
-    
-    sed -i "s/DexterEskalarte/$UUID/g" /etc/xray/config.json
+    # 🟢 Auto-creating Xray Config for Panel
+    cat > /etc/xray/config.json << 'EOF'
+{
+  "log": {
+    "access": "/var/log/xray/access.log",
+    "error": "/var/log/xray/error.log",
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "port": 8080,
+      "listen": "127.0.0.1",
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/ws-kobe"
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom"
+    }
+  ]
+}
+EOF
     chmod +x /usr/sbin/xray
 
     cat >/etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
-Documentation=https://github.com/xtls
 After=network.target nss-lookup.target
 
 [Service]
@@ -127,62 +133,35 @@ dir_xray() {
     mkdir -p /etc/xray
     mkdir -p /var/log/xray/
     mkdir -p /etc/firenet/{database,public_html,theme}
-    touch /etc/firenet/install.log
     touch /var/log/xray/{access.log,error.log}
     chmod 777 /var/log/xray/*.log
-    touch /etc/firenet/database/vmess/vmess.db
-    touch /etc/firenet/database/vless/vless.db
-    touch /etc/firenet/database/trojan/trojan.db
-    touch /etc/firenet/database/ssh/ssh.db
-    touch /etc/firenet/database/shadowsocks/shadowsocks.db
 }
 
 install_ssl() {
-    STOPWEBSERVER=$(lsof -i:80 | cut -d' ' -f1 | awk 'NR==2 {print $1}')
-    systemctl stop "$STOPWEBSERVER" || true
     systemctl stop nginx || true
-    
     mkdir -p /etc/xray
     openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "/C=US/ST=State/L=City/O=Organization/CN=PremiumVPN" >/dev/null 2>&1
     chmod 777 /etc/xray/xray.key /etc/xray/xray.crt
 
-    wget -O /etc/nginx/conf.d/firenet.conf "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/firenet.conf" >/dev/null 2>&1
-    
-    # Fallback nginx config in case link is dead
-    if [ ! -s /etc/nginx/conf.d/firenet.conf ]; then
-        echo "server { listen 80; server_name 127.0.0.1; location / { proxy_pass http://127.0.0.1:8080; } }" > /etc/nginx/conf.d/firenet.conf
-    fi
-    
-    sed -i "s/xxx/127.0.0.1/g" /etc/nginx/conf.d/firenet.conf
-    wget -O /etc/nginx/nginx.conf "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/nginx.conf" >/dev/null 2>&1
-    wget -O /etc/firenet/.version "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/version" >/dev/null 2>&1
-
-    vnstat -u -i $NET || true
-    sed -i 's/Interface "'""eth0""'"/Interface "'""$NET""'"/g' /etc/vnstat.conf || true
-    chown vnstat:vnstat /var/lib/vnstat -R || true
+    # 🟢 Auto-creating Nginx Config for Panel API
+    cat > /etc/nginx/conf.d/firenet.conf << 'EOF'
+server {
+    listen 80;
+    server_name 127.0.0.1;
+    location /ws-kobe {
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+    }
 }
-
-additional(){
-    wget -qO /tmp/bbr.sh "https://raw.githubusercontent.com/rntunnel2025/repo/refs/heads/main/v2ray/bbr.sh" >/dev/null 2>&1
-    chmod +x /tmp/bbr.sh && bash /tmp/bbr.sh || true
-
-    dd if=/dev/zero of=/swapfile1 bs=1024 count=524288 > /dev/null 2>&1
-    mkswap /swapfile1 > /dev/null 2>&1
-    chmod 0600 /swapfile1 > /dev/null 2>&1
-    swapon /swapfile1 > /dev/null 2>&1
-    sed -i '$ i\/swapfile1      swap swap   defaults    0 0' /etc/fstab > /dev/null 2>&1
-
-    chronyc sourcestats -v || true
-    chronyc tracking -v || true
-    tuned-adm profile network-latency || true
+EOF
+    vnstat -u -i $NET || true
 }
 
 install_sudo(){
-    if ! id "adminmtk" &>/dev/null; then
-        useradd -m -s /bin/bash adminmtk
-        echo "adminmtk:Mediatek272124@@" | chpasswd
-        usermod -aG sudo adminmtk
-    fi
     sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
     sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
     systemctl restart ssh || systemctl restart sshd
@@ -195,82 +174,30 @@ enable_services(){
     systemctl enable --now xray
     systemctl enable --now cron
     systemctl enable --now vnstat
-    systemctl enable --now fail2ban || true
 }
 
 finish_script(){
-cat >/etc/firenet/public_html/vmess.txt <<-END
-name: DexterMtk-Vmess-WS
-server: 127.0.0.1
-port: 443
-uuid: ${UUID}
-network: ws
-tls: true
-END
-    
     crontab -r || true
-    # [REMOVED DEADLY CRONS, KEPT ONLY STATS]
-    (echo "* * * * * /bin/bash /etc/xray/xray_stats.sh >/dev/null 2>&1") | crontab -
-    
-    sudo systemctl restart cron
     rm -f /usr/local/etc/.system
-    
     systemctl restart xray.service
-    
-    echo 'Server installation completed successfully! Rebooting...'
-    sleep 5
-    reboot
+    systemctl restart nginx.service
 }
 
 install_rclocal(){
-    echo "[Unit]
-Description=firenet service
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash /etc/rc.local
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target" > /etc/systemd/system/firenet.service
-
-rm -rf /etc/rc.local
-    echo '#!/bin/sh -e
-service ufw stop || true
-iptables-restore < /etc/iptables/rules.v4 || true
-sysctl -p || true
-systemctl restart xray.service || true
-systemctl restart nginx.service || true
-systemctl restart squid.service || true
-ps x | grep udpvpn | grep -v grep || screen -dmS udpvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7300 --max-clients 10000 --max-connections-for-client 10
-exit 0' > /etc/rc.local
-
-sudo chmod +x /etc/rc.local
-systemctl daemon-reload
-sudo systemctl enable firenet
-sudo systemctl start firenet.service || true
-
-echo "xray_tls=443
-xray_ntls=80
-squid_port=8080" > /root/.ports
-
-# [REMOVED AUTHENTICATION KILLERS]
-rm -f /home/authentication.sh
-rm -f /etc/cron.d/account
-
-echo "DB_HOST='localhost'" > /etc/xray/.db-base
-echo "DB_NAME='panel'" >> /etc/xray/.db-base
-echo "DB_USER='root'" >> /etc/xray/.db-base
-echo "DB_PASS='root'" >> /etc/xray/.db-base
+    # 🟢 Auto-creating Ports and Database variables for Panel
+    echo -e "xray_tls=443\nxray_ntls=80\nsquid_port=8080" > /root/.ports
+    echo "DB_HOST='localhost'" > /etc/xray/.db-base
+    echo "DB_NAME='panel'" >> /etc/xray/.db-base
+    echo "DB_USER='root'" >> /etc/xray/.db-base
+    echo "DB_PASS='root'" >> /etc/xray/.db-base
 }
 
+# 🚀 Running all functions
 install_sudo
 base_package
 first_setup
 dir_xray
 install_ssl
-additional
 install_xray
 install_vnstat
 install_squid
