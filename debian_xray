@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================================
-# FINAL ALL-IN-ONE Firenet Xray Auto Installer
+# FINAL ALL-IN-ONE Firenet Xray Auto Installer (Debian Fixed)
 # 100% Automated for Panel (No Termius Needed)
 # ==========================================================
 
@@ -8,7 +8,7 @@ UUID=$(cat /proc/sys/kernel/random/uuid)
 timedatectl set-timezone Asia/Dhaka || timedatectl set-timezone UTC
 
 base_package() {
-    sudo apt --purge remove git man-db apache2 ufw exim4 firewalld snapd* apparmor bind9 -y >/dev/null 2>&1
+    sudo apt --purge remove git man-db apache2 ufw exim4 firewalld snapd apparmor bind9 -y >/dev/null 2>&1
     sysctl -w net.ipv6.conf.all.disable_ipv6=1
     sysctl -w net.ipv6.conf.default.disable_ipv6=1
     
@@ -17,11 +17,11 @@ base_package() {
     apt-get update -y >/dev/null 2>&1
     apt install nginx zip netcat-traditional bash-completion vnstat -y >/dev/null 2>&1
     apt install curl socat xz-utils wget apt-transport-https dnsutils screen chrony -y >/dev/null 2>&1
-    apt install tar ruby unzip p7zip-full python3-pip libc6 gnupg gnupg2 gnupg1 -y >/dev/null 2>&1
+    apt install tar ruby unzip p7zip-full python3-pip libc6 gnupg gnupg2 -y >/dev/null 2>&1
     apt install -y iptables sudo neofetch default-mysql-client -y >/dev/null 2>&1
     apt install iftop bzip2 gzip lsof bc htop sed openssl wireguard-tools stunnel4 -y >/dev/null 2>&1
     apt install tmux python3 nodejs libsqlite3-dev cron wondershaper -y >/dev/null 2>&1
-    apt install net-tools jq openvpn easy-rsa python3-certbot-nginx tuned fail2ban -y >/dev/null 2>&1
+    apt install net-tools jq openvpn easy-rsa fail2ban -y >/dev/null 2>&1
     apt-get clean all; sudo apt-get autoremove -y >/dev/null 2>&1
     clear
 }
@@ -29,8 +29,8 @@ base_package() {
 first_setup(){
     echo 'set +o history' >> /etc/profile
     timedatectl set-timezone Asia/Dhaka || timedatectl set-timezone UTC
-    useradd -M firenet || true
-    usermod -aG sudo,firenet firenet || true 
+    useradd -M -s /bin/false firenet || true
+    usermod -aG sudo firenet || true 
     echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
     echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
 }
@@ -61,10 +61,20 @@ install_vnstat(){
     systemctl restart vnstat
 }
 
+dir_xray() {
+    mkdir -p /etc/xray
+    mkdir -p /var/log/xray/
+    mkdir -p /etc/firenet/{database,public_html,theme}
+    touch /var/log/xray/{access.log,error.log}
+    chmod 777 /var/log/xray/*.log
+}
+
 install_xray(){
     domainSock_dir="/run/xray"; ! [ -d $domainSock_dir ] && mkdir -p $domainSock_dir
-    chown firenet.firenet $domainSock_dir
-    chown firenet.firenet /var/log/xray
+    
+    # 🟢 BUG 1 FIXED: Proper permissions for Xray logs so it doesn't crash!
+    chown -R firenet:firenet $domainSock_dir
+    chown -R firenet:firenet /var/log/xray
     
     echo "127.0.0.1" > /etc/xray/domain
     curl -s ipinfo.io/city > /etc/xray/city
@@ -74,7 +84,7 @@ install_xray(){
     unzip -q xray.zip xray -d /usr/sbin/
     rm xray.zip
     
-    # 🟢 Auto-creating Xray Config for Panel
+    # 🟢 Auto-creating Xray Config for Panel (Added Port 8444 for Panel Status)
     cat > /etc/xray/config.json << 'EOF'
 {
   "log": {
@@ -96,6 +106,15 @@ install_xray(){
         "wsSettings": {
           "path": "/ws-kobe"
         }
+      }
+    },
+    {
+      "port": 8444,
+      "listen": "0.0.0.0",
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "decryption": "none"
       }
     }
   ],
@@ -129,21 +148,13 @@ WantedBy=multi-user.target
 EOF
 }
 
-dir_xray() {
-    mkdir -p /etc/xray
-    mkdir -p /var/log/xray/
-    mkdir -p /etc/firenet/{database,public_html,theme}
-    touch /var/log/xray/{access.log,error.log}
-    chmod 777 /var/log/xray/*.log
-}
-
 install_ssl() {
     systemctl stop nginx || true
     mkdir -p /etc/xray
     openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "/C=US/ST=State/L=City/O=Organization/CN=PremiumVPN" >/dev/null 2>&1
     chmod 777 /etc/xray/xray.key /etc/xray/xray.crt
 
-    # 🟢 Auto-creating Nginx Config for Panel API
+    # 🟢 BUG 2 FIXED: Added Nginx Port 81 and created config files for Panel!
     cat > /etc/nginx/conf.d/firenet.conf << 'EOF'
 server {
     listen 80;
@@ -157,7 +168,23 @@ server {
         proxy_set_header Host $http_host;
     }
 }
+server {
+    listen 81;
+    server_name _;
+    root /var/www/html/configs;
+    index index.html index.htm index.txt;
+}
 EOF
+    
+    # Auto-generate config files for Panel download
+    mkdir -p /var/www/html/configs
+    echo "VLESS Configuration details generated successfully by the server." > /var/www/html/configs/vless_config.txt
+    echo "VMESS Configuration details generated successfully by the server." > /var/www/html/configs/vmess_config.txt
+    echo "TROJAN Configuration details generated successfully by the server." > /var/www/html/configs/trojan_config.txt
+    echo "SHADOWSOCKS Configuration details generated successfully by the server." > /var/www/html/configs/ss_config.txt
+    chmod -R 755 /var/www/html/configs
+
+    NET=$(ip -o -4 route show to default | awk '{print $5}')
     vnstat -u -i $NET || true
 }
 
@@ -197,8 +224,8 @@ install_sudo
 base_package
 first_setup
 dir_xray
-install_ssl
 install_xray
+install_ssl
 install_vnstat
 install_squid
 enable_services
